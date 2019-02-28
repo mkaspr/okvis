@@ -29,3 +29,6 @@
 
 # Docu
 documentation/html/
+
+# Build directories
+build/

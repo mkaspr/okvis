@@ -61,6 +61,8 @@
 
 #include <boost/filesystem.hpp>
 
+std::ofstream pose_stream;
+
 class PoseViewer
 {
  public:
@@ -75,14 +77,21 @@ class PoseViewer
   }
   // this we can register as a callback
   void publishFullStateAsCallback(
-      const okvis::Time & /*t*/, const okvis::kinematics::Transformation & T_WS,
+      const okvis::Time & t, const okvis::kinematics::Transformation & T_WS,
       const Eigen::Matrix<double, 9, 1> & speedAndBiases,
       const Eigen::Matrix<double, 3, 1> & /*omega_S*/)
   {
-
     // just append the path
     Eigen::Vector3d r = T_WS.r();
     Eigen::Matrix3d C = T_WS.C();
+    Eigen::Quaterniond q = T_WS.q();
+
+    // write pose to file
+    pose_stream << t.toNSec() << ",";
+    pose_stream << r[0] << "," << r[1] << "," << r[2] << ",";
+    pose_stream << q.x() << "," << q.y() << "," << q.z() << "," << q.w();
+    pose_stream << std::endl;
+
     _path.push_back(cv::Point2d(r[0], r[1]));
     _heights.push_back(r[2]);
     // maintain scaling
@@ -202,16 +211,13 @@ int main(int argc, char **argv)
   FLAGS_stderrthreshold = 0;  // INFO: 0, WARNING: 1, ERROR: 2, FATAL: 3
   FLAGS_colorlogtostderr = 1;
 
-  if (argc != 3 && argc != 4) {
+  if (argc != 4) {
     LOG(ERROR)<<
-    "Usage: ./" << argv[0] << " configuration-yaml-file dataset-folder [skip-first-seconds]";
+    "Usage: ./" << argv[0] << " configuration-yaml-file dataset-folder pose-file";
     return -1;
   }
 
   okvis::Duration deltaT(0.0);
-  if (argc == 4) {
-    deltaT = okvis::Duration(atof(argv[3]));
-  }
 
   // read configuration file
   std::string configFilename(argv[1]);
@@ -232,6 +238,21 @@ int main(int argc, char **argv)
 
   // the folder path
   std::string path(argv[2]);
+
+  // open the pose file stream
+  pose_stream.open(argv[3]);
+
+  if (!pose_stream.is_open())
+  {
+    LOG(ERROR) << "Unable to open pose file stream: " << argv[3];
+    return -1;
+  }
+
+  // write pose file header
+  pose_stream << "#timestamp [ns],";
+  pose_stream << "p_WS_W_x [m],p_WS_W_y [m],p_WS_W_z [m],";
+  pose_stream << "q_WS_x [],q_WS_y [],q_WS_z [],q_WS_w []";
+  pose_stream << std::endl;
 
   const unsigned int numCameras = parameters.nCameraSystem.numCameras();
 
@@ -298,8 +319,10 @@ int main(int argc, char **argv)
     // check if at the end
     for (size_t i = 0; i < numCameras; ++i) {
       if (cam_iterators[i] == image_names[i].end()) {
-        std::cout << std::endl << "Finished. Press any key to exit." << std::endl << std::flush;
-        cv::waitKey();
+        pose_stream.close();
+        std::cout << std::endl << "Finished." << std::endl << std::flush;
+        // std::cout << std::endl << "Finished. Press any key to exit." << std::endl << std::flush;
+        // cv::waitKey();
         return 0;
       }
     }
@@ -324,8 +347,10 @@ int main(int argc, char **argv)
       okvis::Time t_imu = start;
       do {
         if (!std::getline(imu_file, line)) {
-          std::cout << std::endl << "Finished. Press any key to exit." << std::endl << std::flush;
-          cv::waitKey();
+          pose_stream.close();
+          std::cout << std::endl << "Finished." << std::endl << std::flush;
+          // std::cout << std::endl << "Finished. Press any key to exit." << std::endl << std::flush;
+          // cv::waitKey();
           return 0;
         }
 
